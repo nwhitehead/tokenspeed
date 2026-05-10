@@ -4,16 +4,20 @@
 
 Every local-LLM review brags about throughput — "47 tok/s on an M3," "180 tok/s on a 4090," "500 tok/s on Groq." The numbers are meaningless until you've watched them. Is 30 tok/s painfully slow? Comfortably readable? Faster than you can think? You can't tell from a benchmark table.
 
-`tokenspeed` is a tiny terminal toy that streams lorem-ipsum "tokens" at any rate you set, so you can *feel* what those numbers mean. Bump the speed up and down with a keystroke and watch the cadence change in real time.
+`tokenspeed` is a tiny terminal toy that streams fake "tokens" at any rate you set, so you can *feel* what those numbers mean. Bump the speed up and down with a keystroke and watch the cadence change in real time.
+
+By default it streams **syntax-highlighted pseudo-code** — because most of the time when speed matters, you're watching code stream out of an LLM. There's also a prose mode if you want lorem ipsum.
 
 ## Run it
 
 ```bash
-python3 tokenspeed.py        # starts at 30 tok/s
-python3 tokenspeed.py 60     # starts at 60 tok/s
+python3 tokenspeed.py                  # code mode at 30 tok/s
+python3 tokenspeed.py 60               # code mode at 60 tok/s
+python3 tokenspeed.py --mode prose     # lorem ipsum instead
+python3 tokenspeed.py 120 --mode prose # both
 ```
 
-No dependencies — just Python 3 and a real terminal (the TUI uses raw-mode keyboard input).
+No dependencies — just Python 3 and a real terminal (the TUI uses raw-mode keyboard input and ANSI colors).
 
 ## Controls
 
@@ -28,7 +32,7 @@ No dependencies — just Python 3 and a real terminal (the TUI uses raw-mode key
 
 Start at the default `30` and read along. Then hit `1` (5 tok/s) — that's a Raspberry-Pi-class local model. Now `5` (60 tok/s) — typical hosted Claude or GPT. Then `7` (200 tok/s) — Groq territory. Then `9` (800 tok/s) — Cerebras-class, where the bottleneck is your eyeballs.
 
-The token shapes mimic BPE output: short words are one token, longer ones often split mid-word, with the occasional punctuation. So the visual rhythm at any given rate lands close to a real LLM streaming at the same rate.
+The token shapes mimic BPE output: short words/identifiers are one token, longer ones often split mid-word (`calculate_score` → `calc` + `ulate_score`), with operators and whitespace as their own tokens. So the visual rhythm at any given rate lands close to a real LLM streaming at the same rate.
 
 ## Why it's not "words per second"
 
