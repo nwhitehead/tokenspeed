@@ -92,15 +92,25 @@
     font-size: 12px;
   }
 
-  .repo-link {
+  .repo-link, .link-btn {
     color: var(--dim);
     text-decoration: none;
+    border: none;
     border-bottom: 1px dashed var(--border2);
+    background: none;
+    font: inherit;
+    font-size: 12px;
+    padding: 0;
+    cursor: pointer;
     transition: color 0.12s, border-color 0.12s;
   }
-  .repo-link:hover {
+  .repo-link:hover, .link-btn:hover {
     color: var(--accent);
     border-bottom-color: var(--accent);
+  }
+  .link-btn.copied {
+    color: var(--string);
+    border-bottom-color: var(--string);
   }
 
   .subtitle {
@@ -416,6 +426,8 @@
       <div class="tagline">
         feel LLM tokens-per-second rates &nbsp;·&nbsp;
         <a class="repo-link" href="https://github.com/MikeVeerman/tokenspeed" target="_blank" rel="noopener">github</a>
+        &nbsp;·&nbsp;
+        <button class="link-btn" id="shareBtn" type="button" title="Copy link with current rate &amp; mode">share</button>
       </div>
     </header>
 
@@ -856,6 +868,7 @@ function setRate(r, fromSlider = false) {
   document.querySelectorAll(".preset").forEach(p => {
     p.classList.toggle("match", Math.abs(parseFloat(p.dataset.rate) - rate) < 0.01);
   });
+  syncURL();
 }
 
 function clearOutput() {
@@ -877,6 +890,15 @@ function setMode(m) {
   lastTime = performance.now();
   accumulator = 0;
   start();
+  syncURL();
+}
+
+function syncURL() {
+  if (!mode) return;
+  const params = new URLSearchParams();
+  params.set("rate", formatRate(rate));
+  params.set("mode", mode);
+  history.replaceState(null, "", "?" + params.toString());
 }
 
 function setPaused(p) {
@@ -976,10 +998,35 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+document.getElementById("shareBtn").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const orig = btn.textContent;
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(location.href);
+    ok = true;
+  } catch {
+    // Fallback: select-and-prompt approach not great; just signal failure.
+  }
+  btn.textContent = ok ? "copied!" : "copy failed";
+  btn.classList.add("copied");
+  setTimeout(() => {
+    btn.textContent = orig;
+    btn.classList.remove("copied");
+  }, 1500);
+  btn.blur();
+});
+
 // ---- init ----
 
-setRate(30);
-setMode("code");
+const urlParams = new URLSearchParams(location.search);
+const urlMode  = urlParams.get("mode");
+const urlRate  = parseFloat(urlParams.get("rate"));
+const initialMode = (urlMode && GENERATORS[urlMode]) ? urlMode : "code";
+const initialRate = !isNaN(urlRate) ? urlRate : 30;
+
+setRate(initialRate);
+setMode(initialMode);
 </script>
 </body>
 </html>
