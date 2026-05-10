@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tokenspeed — feel LLM tokens-per-second</title>
+<style>
+  :root {
+    --bg:        #0c0c11;
+    --bg2:       #15151d;
+    --bg3:       #1d1d27;
+    --border:    #25252e;
+    --border2:   #3a3a4a;
+    --fg:        #e6e1d4;
+    --dim:       #6b6b78;
+    --accent:    #ffb454;
+    --accent-glow: rgba(255, 180, 84, 0.32);
+    --kw:        #c678dd;
+    --builtin:   #56b6c2;
+    --fn:        #ffd166;
+    --string:    #98c379;
+    --number:    #d19a66;
+    --comment:   #5c6370;
+    --paused:    #e06c75;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(255,180,84,0.06), transparent 40%),
+      radial-gradient(circle at 80% 100%, rgba(198,120,221,0.05), transparent 50%),
+      var(--bg);
+    color: var(--fg);
+    font: 14px/1.55 ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    display: flex;
+    justify-content: center;
+    padding: 28px 20px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 920px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 4px;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .cursor {
+    display: inline-block;
+    color: var(--accent);
+    animation: blink 1s steps(2) infinite;
+  }
+
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    50.01%, 100% { opacity: 0; }
+  }
+
+  .tagline {
+    color: var(--dim);
+    font-size: 12px;
+  }
+
+  .row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    padding: 8px 16px;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.08s, box-shadow 0.18s;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1;
+  }
+
+  .pill:hover {
+    border-color: var(--border2);
+    background: var(--bg3);
+  }
+
+  .pill:active { transform: translateY(1px); }
+
+  .pill.active {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+    box-shadow: 0 0 18px var(--accent-glow);
+  }
+
+  .pill kbd {
+    font: inherit;
+    font-size: 10px;
+    color: var(--dim);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    line-height: 1.2;
+  }
+  .pill.active kbd {
+    color: rgba(13,13,18,0.7);
+    background: rgba(13,13,18,0.12);
+    border-color: rgba(13,13,18,0.18);
+  }
+
+  .rate-bar {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 18px;
+    align-items: center;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 18px;
+  }
+
+  .rate-display {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 130px;
+  }
+
+  .rate-num {
+    font-size: 30px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+    transition: text-shadow 0.25s, transform 0.18s;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .rate-num.bump {
+    text-shadow: 0 0 26px var(--accent-glow);
+    transform: scale(1.06);
+  }
+
+  .rate-unit { color: var(--dim); font-size: 12px; }
+
+  input[type="range"] {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 22px;
+    cursor: pointer;
+    margin: 0;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px; background: var(--border); border-radius: 2px;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 4px; background: var(--border); border-radius: 2px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: -6px;
+    box-shadow: 0 0 12px var(--accent-glow);
+    border: none;
+    transition: transform 0.1s;
+  }
+  input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.15); }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+
+  .step-btns {
+    display: flex; gap: 6px;
+  }
+
+  .icon-btn {
+    width: 34px; height: 34px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    border-radius: 8px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 16px;
+    display: grid; place-items: center;
+    transition: border-color 0.12s, color 0.12s, transform 0.08s;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .icon-btn:active { transform: translateY(1px); }
+
+  .preset {
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--dim);
+    min-width: 52px;
+    justify-content: center;
+  }
+  .preset .num { color: var(--fg); font-weight: 600; }
+  .preset.active {
+    background: var(--bg3);
+    color: var(--fg);
+    border-color: var(--border2);
+  }
+  .preset.match {
+    border-color: var(--accent);
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+
+  .output {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    min-height: 360px;
+    height: 56vh;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    line-height: 1.65;
+    position: relative;
+    transition: opacity 0.2s;
+    font-size: 14px;
+    scrollbar-color: var(--border2) transparent;
+    scrollbar-width: thin;
+  }
+  .output::-webkit-scrollbar { width: 8px; }
+  .output::-webkit-scrollbar-track { background: transparent; }
+  .output::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+  body.paused .output { opacity: 0.55; }
+
+  #cursor-end {
+    color: var(--accent);
+    animation: blink 1s steps(2) infinite;
+    margin-left: 1px;
+  }
+  body.paused #cursor-end { animation: none; opacity: 0.3; }
+
+  .kw      { color: var(--kw); font-weight: 600; }
+  .builtin { color: var(--builtin); }
+  .fn      { color: var(--fn); font-weight: 600; }
+  .string  { color: var(--string); }
+  .number  { color: var(--number); }
+  .comment { color: var(--comment); }
+  .think   { color: #8a8a96; font-style: italic; }
+
+  .footer {
+    color: var(--dim);
+    font-size: 11.5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 0 4px;
+  }
+
+  .footer kbd {
+    font: inherit;
+    background: var(--bg2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    font-size: 11px;
+  }
+
+  .pause-badge {
+    display: none;
+    color: var(--paused);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  body.paused .pause-badge { display: inline; }
+
+  @media (max-width: 640px) {
+    body { padding: 16px 12px; }
+    .rate-bar { grid-template-columns: 1fr auto; row-gap: 12px; }
+    .rate-bar input[type="range"] { grid-column: 1 / -1; }
+    h1 { font-size: 18px; }
+    .rate-num { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1><span class="cursor">▍</span>tokenspeed</h1>
+      <div class="tagline">feel LLM tokens-per-second rates</div>
+    </header>
+
+    <div class="row" id="modes" role="tablist" aria-label="Mode">
+      <button class="pill" data-mode="code"><kbd>c</kbd>code</button>
+      <button class="pill" data-mode="text"><kbd>t</kbd>text</button>
+      <button class="pill" data-mode="think"><kbd>h</kbd>think</button>
+    </div>
+
+    <div class="rate-bar">
+      <div class="rate-display">
+        <span class="rate-num" id="rateNum">30</span>
+        <span class="rate-unit">tok/s</span>
+      </div>
+      <input type="range" id="rateSlider" min="0" max="100" step="0.1" value="60" aria-label="Rate">
+      <div class="step-btns">
+        <button class="icon-btn" id="rateDown" title="slower (−)" aria-label="slower">−</button>
+        <button class="icon-btn" id="rateUp" title="faster (+)" aria-label="faster">+</button>
+      </div>
+    </div>
+
+    <div class="row" id="presets">
+      <button class="pill preset" data-rate="5"><kbd>1</kbd><span class="num">5</span></button>
+      <button class="pill preset" data-rate="10"><kbd>2</kbd><span class="num">10</span></button>
+      <button class="pill preset" data-rate="20"><kbd>3</kbd><span class="num">20</span></button>
+      <button class="pill preset" data-rate="30"><kbd>4</kbd><span class="num">30</span></button>
+      <button class="pill preset" data-rate="60"><kbd>5</kbd><span class="num">60</span></button>
+      <button class="pill preset" data-rate="100"><kbd>6</kbd><span class="num">100</span></button>
+      <button class="pill preset" data-rate="200"><kbd>7</kbd><span class="num">200</span></button>
+      <button class="pill preset" data-rate="400"><kbd>8</kbd><span class="num">400</span></button>
+      <button class="pill preset" data-rate="800"><kbd>9</kbd><span class="num">800</span></button>
+    </div>
+
+    <div class="output" id="output" tabindex="0" aria-live="polite"><span id="cursor-end">▍</span></div>
+
+    <div class="footer">
+      <div>
+        <kbd>space</kbd> pause &nbsp;·&nbsp;
+        <kbd>+</kbd> / <kbd>−</kbd> adjust &nbsp;·&nbsp;
+        <kbd>1</kbd>–<kbd>9</kbd> presets &nbsp;·&nbsp;
+        <kbd>c</kbd> / <kbd>t</kbd> / <kbd>h</kbd> mode
+      </div>
+      <span class="pause-badge">⏸ PAUSED</span>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+const MIN_RATE   = 0.05;
+const MAX_RATE   = 2000;
+const RATE_STEP  = 1.25;
+const PUNCT_EVERY = 12;
+const MAX_NODES   = 5000;
+const TRIM_TO     = 3500;
+const MAX_PER_FRAME = 300;
+const PRESET_RATES = [5, 10, 20, 30, 60, 100, 200, 400, 800];
+
+const LOREM = (
+  "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor " +
+  "incididunt ut labore et dolore magna aliqua Ut enim ad minim veniam quis " +
+  "nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat " +
+  "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore " +
+  "eu fugiat nulla pariatur Excepteur sint occaecat cupidatat non proident sunt " +
+  "in culpa qui officia deserunt mollit anim id est laborum Sed ut perspiciatis " +
+  "unde omnis iste natus error sit voluptatem accusantium doloremque laudantium " +
+  "totam rem aperiam eaque ipsa quae ab illo inventore veritatis et quasi " +
+  "architecto beatae vitae dicta sunt explicabo Nemo enim ipsam voluptatem quia " +
+  "voluptas sit aspernatur aut odit aut fugit sed quia consequuntur magni " +
+  "dolores eos qui ratione voluptatem sequi nesciunt neque porro quisquam est " +
+  "qui dolorem ipsum quia dolor sit amet consectetur adipisci velit"
+).split(" ");
+
+const KEYWORDS = new Set([
+  "def","class","if","else","elif","for","while","return","import",
+  "from","as","in","not","and","or","is","None","True","False",
+  "try","except","with","pass","break","continue","lambda","yield",
+  "async","await","fn","let","const","mut","pub","struct","impl",
+  "match","self","Self","use","function","var","new","throw",
+]);
+
+const BUILTINS = new Set([
+  "print","len","range","sum","min","max","sorted","enumerate",
+  "map","filter","zip","list","dict","set","tuple","int","str",
+  "float","bool","open","isinstance","type","Vec","String","Some",
+  "Ok","Err","Result","Option","Error","fetch","Date","Config",
+  "fs",
+]);
+
+const DECL_KEYWORDS = new Set(["def","fn","function","class","struct","impl"]);
+
+const TOKEN_RE = /(?<comment>#[^\n]*|\/\/[^\n]*)|(?<string>"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(?<number>\d+(?:\.\d+)?)|(?<word>[A-Za-z_][A-Za-z_0-9]*)|(?<ws>\n[ \t]*|[ \t]+)|(?<op>[^\w\s])/g;
+
+const IDENT_PARTS = /_+|[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+/g;
+
+const CODE_SNIPPETS = [
+`def estimate_tokens(text, model="claude-opus"):
+    # Rough heuristic: ~1 token per 4 chars of English
+    chars = len(text)
+    overhead = sum(1 for c in text if c in ".,;:!?")
+    return (chars // 4) + overhead + 1
+`,
+`class TokenStream:
+    def __init__(self, model, prompt, rate=30):
+        self.model = model
+        self.prompt = prompt
+        self.rate = rate
+        self._budget = 2048
+
+    async def __aiter__(self):
+        async for chunk in self.model.stream(self.prompt):
+            yield chunk.text
+            if chunk.stop_reason:
+                return
+`,
+`fn parse_config(path: &str) -> Result<Config, Error> {
+    let contents = fs::read_to_string(path)?;
+    let mut config = Config::default();
+    for line in contents.lines() {
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        config.apply(line)?;
+    }
+    Ok(config)
+}
+`,
+`const fetchUser = async (id) => {
+    const res = await fetch(\`/api/users/\${id}\`);
+    if (!res.ok) {
+        throw new Error(\`HTTP \${res.status}: failed to load user\`);
+    }
+    const user = await res.json();
+    return { ...user, fetchedAt: Date.now() };
+};
+`,
+`def merge_sorted(left, right):
+    result = []
+    i = j = 0
+    while i < len(left) and j < len(right):
+        if left[i] <= right[j]:
+            result.append(left[i])
+            i += 1
+        else:
+            result.append(right[j])
+            j += 1
+    return result + left[i:] + right[j:]
+`,
+`def retry(func, attempts=3, backoff=0.5):
+    # Exponential backoff with jitter
+    for n in range(attempts):
+        try:
+            return func()
+        except Exception as err:
+            if n == attempts - 1:
+                raise
+            time.sleep(backoff * (2 ** n))
+`,
+];
+
+const THOUGHTS = [
+  "Let me trace through this with a small example to make sure the indices line up.",
+  "The function takes a path and returns a Result, so any IO error bubbles up via the ? operator.",
+  "Wait — if the input list is empty, the loop never executes and we return a stale value.",
+  "I think the cleanest approach is to extract this into its own helper and unit-test it in isolation.",
+  "Actually, the existing utility already handles the retry logic, so I should just reuse it.",
+  "Looking at the call sites, none of them pass None, so a non-optional type is fine here.",
+  "Let me check whether the upstream library closes the connection on its own.",
+  "First I'll validate the input, then run the main loop, then format the output for the caller.",
+  "The hot path here is the inner loop, so I want to avoid allocations inside it if possible.",
+  "I should add an early return when the cache is warm to skip the expensive recomputation.",
+  "This is essentially a fold, so a reduce with an accumulator dictionary should work cleanly.",
+  "If we're streaming, we can't materialize the whole list — switch to a generator that yields chunks.",
+  "The error handling is duplicated across all three call sites, so let me factor it into a decorator.",
+  "Hmm, the type annotation says str but the runtime value can be bytes when the encoding fails.",
+  "I'll use a context manager so the file gets closed even if an exception is raised mid-iteration.",
+  "Before writing the implementation, I want to sketch the public API to keep the surface minimal.",
+  "The naming is a bit confusing here — result and response mean different things in this codebase.",
+  "OK, I think I have a clear plan now. Let me write the function:",
+  "That handles the happy path. Now I need to think about what happens on a partial failure.",
+  "Reading the tests, the contract seems to be that empty input returns an empty list, not None.",
+];
+
+// ---- helpers ----
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;");
+}
+
+function colorize(text, cls) {
+  const esc = escapeHtml(text);
+  return cls ? `<span class="${cls}">${esc}</span>` : esc;
+}
+
+function randInt(lo, hi) {
+  return lo + Math.floor(Math.random() * (hi - lo + 1));
+}
+
+function shuffled(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+  }
+  return a;
+}
+
+// ---- generators ----
+
+function* bpeSplitPlainWord(word) {
+  const n = word.length;
+  if (n <= 5) { yield word; return; }
+  const p = n <= 7 ? 0.3 : n <= 10 ? 0.5 : 0.75;
+  if (Math.random() >= p) { yield word; return; }
+  const cut = randInt(2, n - 2);
+  yield word.slice(0, cut);
+  yield word.slice(cut);
+}
+
+function* emitSplitWord(word, cls) {
+  let first = true;
+  for (const piece of bpeSplitPlainWord(word)) {
+    yield colorize(first ? " " + piece : piece, cls);
+    first = false;
+  }
+}
+
+function* splitIdentifier(text) {
+  if (text.length <= 5) { yield text; return; }
+  const chunks = text.match(IDENT_PARTS) || [text];
+  const merged = [];
+  let i = 0;
+  while (i < chunks.length) {
+    const c = chunks[i];
+    if (c === "_" && i + 1 < chunks.length) {
+      merged.push("_" + chunks[i + 1]);
+      i += 2;
+    } else {
+      merged.push(c);
+      i++;
+    }
+  }
+  if (merged.length > 1) { yield* merged; return; }
+  if (text.length >= 10 && Math.random() < 0.35) {
+    const cut = randInt(3, text.length - 3);
+    yield text.slice(0, cut);
+    yield text.slice(cut);
+  } else {
+    yield text;
+  }
+}
+
+function* proseTokens() {
+  let i = 0;
+  while (true) {
+    const word = LOREM[i % LOREM.length];
+    i++;
+    yield* emitSplitWord(word);
+    if (i % PUNCT_EVERY === 0) {
+      const p = [",", ".", ".", ";"][Math.floor(Math.random() * 4)];
+      yield escapeHtml(p);
+    }
+  }
+}
+
+function* emitSnippet(snippet) {
+  let expectingFn = false;
+  TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = TOKEN_RE.exec(snippet)) !== null) {
+    const g = m.groups;
+    let kind, text;
+    if      (g.comment !== undefined) { kind = "comment"; text = g.comment; }
+    else if (g.string  !== undefined) { kind = "string";  text = g.string;  }
+    else if (g.number  !== undefined) { kind = "number";  text = g.number;  }
+    else if (g.word    !== undefined) { kind = "word";    text = g.word;    }
+    else if (g.ws      !== undefined) { kind = "ws";      text = g.ws;      }
+    else                              { kind = "op";      text = g.op;      }
+
+    if (kind === "ws") { yield escapeHtml(text); continue; }
+
+    let cls = "", split = false;
+    if (kind === "word") {
+      if (KEYWORDS.has(text)) {
+        cls = "kw";
+        expectingFn = DECL_KEYWORDS.has(text);
+      } else if (BUILTINS.has(text)) {
+        cls = "builtin";
+        expectingFn = false;
+      } else if (expectingFn) {
+        cls = "fn";
+        expectingFn = false;
+        split = true;
+      } else {
+        cls = "";
+        split = true;
+      }
+    } else if (kind === "comment" || kind === "string" || kind === "number") {
+      cls = kind;
+    }
+
+    if (split) {
+      for (const piece of splitIdentifier(text)) yield colorize(piece, cls);
+    } else {
+      yield colorize(text, cls);
+    }
+  }
+}
+
+function* snippetCycle() {
+  while (true) yield* shuffled(CODE_SNIPPETS);
+}
+
+function* codeTokens() {
+  for (const snippet of snippetCycle()) {
+    yield* emitSnippet(snippet);
+    yield "\n";
+  }
+}
+
+function* emitThought() {
+  const n = randInt(3, 7);
+  for (let s = 0; s < n; s++) {
+    const sentence = THOUGHTS[Math.floor(Math.random() * THOUGHTS.length)];
+    for (const word of sentence.split(" ")) {
+      let base = word.replace(/[,.;:?!]+$/, "");
+      let tail = word.slice(base.length);
+      if (!base) { base = word; tail = ""; }
+      yield* emitSplitWord(base, "think");
+      for (const ch of tail) yield colorize(ch, "think");
+    }
+  }
+}
+
+function* thinkTokens() {
+  for (const snippet of snippetCycle()) {
+    yield* emitThought();
+    yield "\n\n";
+    yield* emitSnippet(snippet);
+    if (Math.random() < 0.7) {
+      yield "\n";
+      yield* emitThought();
+      yield "\n\n";
+    } else {
+      yield "\n";
+    }
+  }
+}
+
+const GENERATORS = { code: codeTokens, text: proseTokens, think: thinkTokens };
+
+// ---- state + UI ----
+
+const output     = document.getElementById("output");
+const cursorEnd  = document.getElementById("cursor-end");
+const rateNum    = document.getElementById("rateNum");
+const rateSlider = document.getElementById("rateSlider");
+
+let rate = 30;
+let paused = false;
+let mode = null;
+let gen = null;
+let raf = null;
+let lastTime = 0;
+let accumulator = 0;
+
+const LOG_RANGE = Math.log(MAX_RATE / MIN_RATE);
+const rateToSlider = r => 100 * Math.log(r / MIN_RATE) / LOG_RANGE;
+const sliderToRate = v => MIN_RATE * Math.exp((v / 100) * LOG_RANGE);
+
+function formatRate(r) {
+  if (r >= 100) return Math.round(r).toString();
+  if (r >= 10)  return r.toFixed(1).replace(/\.0$/, "");
+  return r.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function setRate(r, fromSlider = false) {
+  rate = Math.max(MIN_RATE, Math.min(MAX_RATE, r));
+  rateNum.textContent = formatRate(rate);
+  // Bump animation
+  rateNum.classList.remove("bump");
+  void rateNum.offsetWidth;
+  rateNum.classList.add("bump");
+  if (!fromSlider) rateSlider.value = rateToSlider(rate);
+  // Highlight matching preset
+  document.querySelectorAll(".preset").forEach(p => {
+    p.classList.toggle("match", Math.abs(parseFloat(p.dataset.rate) - rate) < 0.01);
+  });
+}
+
+function clearOutput() {
+  // Keep only the cursor-end node
+  while (output.firstChild && output.firstChild !== cursorEnd) {
+    output.removeChild(output.firstChild);
+  }
+  if (!output.contains(cursorEnd)) output.appendChild(cursorEnd);
+}
+
+function setMode(m) {
+  if (m === mode) return;
+  mode = m;
+  gen = GENERATORS[m]();
+  document.querySelectorAll("[data-mode]").forEach(b => {
+    b.classList.toggle("active", b.dataset.mode === m);
+  });
+  clearOutput();
+  lastTime = performance.now();
+  accumulator = 0;
+  start();
+}
+
+function setPaused(p) {
+  paused = p;
+  document.body.classList.toggle("paused", paused);
+  if (!paused) {
+    lastTime = performance.now();
+    accumulator = 0;
+    start();
+  }
+}
+
+function trim() {
+  // Each emitted token is one DOM node (text or span). Cap childNodes.
+  const total = output.childNodes.length;
+  if (total > MAX_NODES) {
+    const drop = total - TRIM_TO;
+    for (let i = 0; i < drop; i++) {
+      const first = output.firstChild;
+      if (first === cursorEnd || !first) break;
+      output.removeChild(first);
+    }
+  }
+}
+
+function frame(now) {
+  raf = null;
+  if (!gen || paused) return;
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+  // Cap dt to absorb tab-backgrounded gaps without bursting
+  accumulator += Math.min(dt, 0.1) * rate;
+  let n = Math.floor(accumulator);
+  if (n > 0) {
+    accumulator -= n;
+    if (n > MAX_PER_FRAME) n = MAX_PER_FRAME;
+    let html = "";
+    for (let i = 0; i < n; i++) html += gen.next().value;
+    if (html) {
+      cursorEnd.insertAdjacentHTML("beforebegin", html);
+      output.scrollTop = output.scrollHeight;
+      trim();
+    }
+  }
+  raf = requestAnimationFrame(frame);
+}
+
+function start() {
+  if (raf || paused || !gen) return;
+  lastTime = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+
+// ---- wiring ----
+
+document.querySelectorAll("[data-mode]").forEach(b => {
+  b.addEventListener("click", () => { setMode(b.dataset.mode); b.blur(); });
+});
+
+document.querySelectorAll(".preset").forEach(b => {
+  b.addEventListener("click", () => { setRate(parseFloat(b.dataset.rate)); b.blur(); });
+});
+
+document.getElementById("rateUp").addEventListener("click",   e => { setRate(rate * RATE_STEP); e.currentTarget.blur(); });
+document.getElementById("rateDown").addEventListener("click", e => { setRate(rate / RATE_STEP); e.currentTarget.blur(); });
+
+rateSlider.addEventListener("input", e => setRate(sliderToRate(parseFloat(e.target.value)), true));
+
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (k === " ") {
+    e.preventDefault();
+    setPaused(!paused);
+  } else if (k === "+" || k === "=") {
+    e.preventDefault();
+    setRate(rate * RATE_STEP);
+  } else if (k === "-" || k === "_") {
+    e.preventDefault();
+    setRate(rate / RATE_STEP);
+  } else if (/^[1-9]$/.test(k)) {
+    setRate(PRESET_RATES[parseInt(k, 10) - 1]);
+  } else if (k === "c" || k === "C") {
+    setMode("code");
+  } else if (k === "t" || k === "T") {
+    setMode("text");
+  } else if (k === "h" || k === "H") {
+    setMode("think");
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    lastTime = performance.now();
+    accumulator = 0;
+    start();
+  }
+});
+
+// ---- init ----
+
+setRate(30);
+setMode("code");
+</script>
+</body>
+</html>
