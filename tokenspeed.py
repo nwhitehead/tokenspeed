@@ -375,7 +375,7 @@ def main():
                    help="what to stream (prompts if omitted)")
     args = p.parse_args()
 
-    rate = max(0.5, args.rate)
+    rate = max(0.05, args.rate)
     paused = False
     generators = {"code": code_tokens, "text": prose_tokens, "think": think_tokens}
 
@@ -400,7 +400,7 @@ def main():
                 elif ch in ("+", "="):
                     rate = min(rate * 1.25, 2000)
                 elif ch in ("-", "_"):
-                    rate = max(rate / 1.25, 0.5)
+                    rate = max(rate / 1.25, 0.05)
                 elif ch == " ":
                     paused = not paused
                 elif ch in PRESETS:
