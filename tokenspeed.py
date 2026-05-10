@@ -36,15 +36,14 @@ def prose_tokens():
     while True:
         word = LOREM[i % len(LOREM)]
         i += 1
-        suffix = ""
-        if i % PUNCT_EVERY == 0:
-            suffix = random.choice([",", ".", ".", ";"])
         if len(word) >= 6 and random.random() < 0.45:
             cut = random.randint(2, len(word) - 2)
             yield " " + word[:cut]
-            yield word[cut:] + suffix
+            yield word[cut:]
         else:
-            yield " " + word + suffix
+            yield " " + word
+        if i % PUNCT_EVERY == 0:
+            yield random.choice([",", ".", ".", ";"])
 
 
 # ---------------------------------------------------------------------------
@@ -266,12 +265,20 @@ def _emit_thought():
     for s_idx in range(random.randint(3, 7)):
         sentence = random.choice(THOUGHTS)
         for word in sentence.split():
-            if len(word) >= 8 and random.random() < 0.4:
-                cut = random.randint(3, len(word) - 3)
-                yield f"{THINK_STYLE} {word[:cut]}{RESET}"
-                yield f"{THINK_STYLE}{word[cut:]}{RESET}"
+            base = word.rstrip(",.;:?!")
+            tail = word[len(base):]
+            if not base:
+                base, tail = word, ""
+
+            if len(base) >= 8 and random.random() < 0.4:
+                cut = random.randint(3, len(base) - 3)
+                yield f"{THINK_STYLE} {base[:cut]}{RESET}"
+                yield f"{THINK_STYLE}{base[cut:]}{RESET}"
             else:
-                yield f"{THINK_STYLE} {word}{RESET}"
+                yield f"{THINK_STYLE} {base}{RESET}"
+
+            for ch in tail:
+                yield f"{THINK_STYLE}{ch}{RESET}"
 
 
 def think_tokens():

@@ -38,8 +38,16 @@ No dependencies — just Python 3 and a real terminal (the TUI uses raw-mode key
 
 Start at the default `30` and read along. Then hit `1` (5 tok/s) — that's a Raspberry-Pi-class local model. Now `5` (60 tok/s) — typical hosted Claude or GPT. Then `7` (200 tok/s) — Groq territory. Then `9` (800 tok/s) — Cerebras-class, where the bottleneck is your eyeballs.
 
-The token shapes mimic BPE output: short words/identifiers are one token, longer ones often split mid-word (`calculate_score` → `calc` + `ulate_score`), with operators and whitespace as their own tokens. So the visual rhythm at any given rate lands close to a real LLM streaming at the same rate.
+Now switch modes (`--mode code` vs `--mode text`) at the same rate. The difference is striking and intentional — see below.
 
-## Why it's not "words per second"
+## What counts as a token
 
-LLMs don't emit words — they emit tokens, and English text averages roughly 1.3 tokens per word. A model running at 30 tok/s produces about 23 words/s. `tokenspeed` simulates the sub-word splits so a "30" here looks like a "30" from llama.cpp, not 30 whole words flying past.
+`tokenspeed` mimics how real BPE tokenizers (tiktoken, Claude's tokenizer, etc.) chunk content:
+
+- Short words and identifiers are one token; longer ones often split mid-word (`calculate_score` → `calc` + `ulate_score`)
+- Every `,` `.` `;` `:` is its own token — attached visually to the previous word, but ticking the rate clock on its own
+- In code, every `(` `,` `:` `=` is also its own token, and a newline-plus-indentation run counts as one token too
+
+That's why the same nominal rate feels very different across modes: 30 tok/s of code lands far less visible content per second than 30 tok/s of prose, because code is structurally dense in operators and indentation. The benchmark number is honest — the perceptual effect just varies a lot by content type, which is exactly the gap this tool exists to expose.
+
+(English prose averages ~1.3 tokens per word, so 30 tok/s ≈ 23 words/s of text.)
