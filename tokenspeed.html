@@ -83,6 +83,17 @@
     font-size: 12px;
   }
 
+  .repo-link {
+    color: var(--dim);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--border2);
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .repo-link:hover {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
   .row {
     display: flex;
     gap: 8px;
@@ -323,7 +334,10 @@
   <div class="container">
     <header>
       <h1><span class="cursor">▍</span>tokenspeed</h1>
-      <div class="tagline">feel LLM tokens-per-second rates</div>
+      <div class="tagline">
+        feel LLM tokens-per-second rates &nbsp;·&nbsp;
+        <a class="repo-link" href="https://github.com/MikeVeerman/tokenspeed" target="_blank" rel="noopener">github</a>
+      </div>
     </header>
 
     <div class="row" id="modes" role="tablist" aria-label="Mode">
