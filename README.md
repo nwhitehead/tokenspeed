@@ -42,8 +42,10 @@ Now switch between `--mode code` and `--mode text` at the same rate. The differe
 
 ## What counts as a token
 
-`tokenspeed` mimics how real BPE tokenizers (tiktoken, Claude's, etc.) chunk content: short words are one token, longer ones split mid-word (`calculate_score` → `calc` + `ulate_score`), and every `,` `.` `(` `=` gets its own token too.
+`tokenspeed` approximates BPE-style tokenization. It is **not** trying to exactly reproduce `tiktoken`, Claude's tokenizer, or any vendor-specific encoder — those disagree with each other in the details anyway.
 
-That's why 30 tok/s of code lands far less visible content per second than 30 tok/s of prose — code is structurally token-dense in operators and indentation. The benchmark number is honest; the perceptual effect just varies a lot by content type, which is exactly the gap this tool exists to expose.
+Roughly: short words are often one token; longer identifiers frequently split into multiple chunks (e.g., `processUserInput` → `process` + `User` + `Input`, `calculate_score` → `calculate` + `_score`); and punctuation and operators usually count as tokens too.
+
+The point worth internalizing: code is more token-dense than prose, so the same tok/s can feel very different depending on what's streaming. 30 tok/s of code lands far less visible content per second than 30 tok/s of English. The benchmark number is honest; the perceptual effect just varies a lot by content type, which is exactly the gap this tool exists to expose.
 
 (English prose averages ~1.3 tokens per word, so 30 tok/s ≈ 23 words/s.)

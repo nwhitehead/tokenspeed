@@ -31,17 +31,30 @@ LOREM = (
 PUNCT_EVERY = 12
 
 
+def _bpe_split_plain_word(word):
+    """BPE-ish: short words stay whole; longer words split more often."""
+    n = len(word)
+    if n <= 5:
+        yield word
+        return
+    p_split = 0.3 if n <= 7 else 0.5 if n <= 10 else 0.75
+    if random.random() >= p_split:
+        yield word
+        return
+    cut = random.randint(2, n - 2)
+    yield word[:cut]
+    yield word[cut:]
+
+
 def prose_tokens():
     i = 0
     while True:
         word = LOREM[i % len(LOREM)]
         i += 1
-        if len(word) >= 6 and random.random() < 0.45:
-            cut = random.randint(2, len(word) - 2)
-            yield " " + word[:cut]
-            yield word[cut:]
-        else:
-            yield " " + word
+        first = True
+        for piece in _bpe_split_plain_word(word):
+            yield (" " + piece) if first else piece
+            first = False
         if i % PUNCT_EVERY == 0:
             yield random.choice([",", ".", ".", ";"])
 
@@ -86,7 +99,7 @@ TOKEN_RE = re.compile(
     | (?P<string>  "(?:[^"\\]|\\.)*" | '(?:[^'\\]|\\.)*' | `(?:[^`\\]|\\.)*` )
     | (?P<number>  \d+(?:\.\d+)? )
     | (?P<word>    [A-Za-z_][A-Za-z_0-9]* )
-    | (?P<ws>      [ \t]+ | \n+ )
+    | (?P<ws>      \n[ \t]* | [ \t]+ )
     | (?P<op>      [^\w\s] )
     """,
     re.VERBOSE,
@@ -162,16 +175,39 @@ def _color(text, kind):
     return f"{COLORS[kind]}{text}{RESET}" if COLORS[kind] else text
 
 
+_IDENT_PARTS = re.compile(r"_+|[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+")
+
+
 def _split_identifier(text):
-    """BPE-ish: occasionally split long identifiers into two pieces."""
-    if len(text) < 8 or random.random() < 0.4:
+    """BPE-ish: split identifiers at snake_case / camelCase / acronym boundaries."""
+    if len(text) <= 5:
         yield text
         return
-    boundaries = [i for i, c in enumerate(text)
-                  if i > 1 and i < len(text) - 1 and (c == "_" or c.isupper())]
-    cut = random.choice(boundaries) if boundaries else random.randint(3, len(text) - 3)
-    yield text[:cut]
-    yield text[cut:]
+
+    chunks = _IDENT_PARTS.findall(text)
+    # Single underscores cling to the following piece: `calculate_score` -> `calculate`, `_score`.
+    # Runs of two or more (`__init__`) stand alone.
+    merged = []
+    i = 0
+    while i < len(chunks):
+        c = chunks[i]
+        if c == "_" and i + 1 < len(chunks):
+            merged.append("_" + chunks[i + 1])
+            i += 2
+        else:
+            merged.append(c)
+            i += 1
+
+    if len(merged) > 1:
+        yield from merged
+        return
+
+    if len(text) >= 10 and random.random() < 0.35:
+        cut = random.randint(3, len(text) - 3)
+        yield text[:cut]
+        yield text[cut:]
+    else:
+        yield text
 
 
 def _emit_snippet(snippet):
@@ -270,12 +306,11 @@ def _emit_thought():
             if not base:
                 base, tail = word, ""
 
-            if len(base) >= 8 and random.random() < 0.4:
-                cut = random.randint(3, len(base) - 3)
-                yield f"{THINK_STYLE} {base[:cut]}{RESET}"
-                yield f"{THINK_STYLE}{base[cut:]}{RESET}"
-            else:
-                yield f"{THINK_STYLE} {base}{RESET}"
+            first = True
+            for piece in _bpe_split_plain_word(base):
+                prefix = " " if first else ""
+                yield f"{THINK_STYLE}{prefix}{piece}{RESET}"
+                first = False
 
             for ch in tail:
                 yield f"{THINK_STYLE}{ch}{RESET}"
