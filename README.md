@@ -6,15 +6,15 @@ Every local-LLM review brags about throughput — "47 tok/s on an M3," "180 tok/
 
 `tokenspeed` is a tiny terminal toy that streams fake "tokens" at any rate you set, so you can *feel* what those numbers mean. Bump the speed up and down with a keystroke and watch the cadence change in real time.
 
-By default it streams **syntax-highlighted pseudo-code** — because most of the time when speed matters, you're watching code stream out of an LLM. There's also a prose mode if you want lorem ipsum.
+It can stream **syntax-highlighted pseudo-code** (because most of the time when speed matters, you're watching code stream out of an LLM) or **lorem ipsum text**. If you don't pick a mode on the command line, it'll ask.
 
 ## Run it
 
 ```bash
-python3 tokenspeed.py                  # code mode at 30 tok/s
-python3 tokenspeed.py 60               # code mode at 60 tok/s
-python3 tokenspeed.py --mode prose     # lorem ipsum instead
-python3 tokenspeed.py 120 --mode prose # both
+python3 tokenspeed.py                 # 30 tok/s, prompts for mode
+python3 tokenspeed.py 60              # 60 tok/s, prompts for mode
+python3 tokenspeed.py --mode code     # skip the prompt
+python3 tokenspeed.py 120 --mode text # both at once
 ```
 
 No dependencies — just Python 3 and a real terminal (the TUI uses raw-mode keyboard input and ANSI colors).

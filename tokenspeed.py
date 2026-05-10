@@ -242,23 +242,47 @@ def status(rate, paused, mode):
     )
 
 
+def prompt_mode():
+    sys.stdout.write(
+        "\n\x1b[1mChoose mode:\x1b[0m\n"
+        "  \x1b[1;33m[c]\x1b[0m code  — syntax-highlighted pseudo-code\n"
+        "  \x1b[1;33m[t]\x1b[0m text  — lorem ipsum prose\n"
+        "\n> "
+    )
+    sys.stdout.flush()
+    while True:
+        ch = sys.stdin.read(1).lower()
+        if ch == "c":
+            sys.stdout.write("code\n")
+            return "code"
+        if ch == "t":
+            sys.stdout.write("text\n")
+            return "text"
+        if ch in ("q", "\x03", "\x04"):  # q, Ctrl-C, Ctrl-D
+            sys.stdout.write("\n")
+            sys.exit(0)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("rate", type=float, nargs="?", default=30.0,
                    help="initial tokens per second (default: 30)")
-    p.add_argument("--mode", choices=["code", "prose"], default="code",
-                   help="what to stream (default: code)")
+    p.add_argument("--mode", choices=["code", "text"], default=None,
+                   help="what to stream (prompts if omitted)")
     args = p.parse_args()
 
     rate = max(0.5, args.rate)
     paused = False
-    gen = (code_tokens if args.mode == "code" else prose_tokens)()
 
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
         tty.setcbreak(fd)
-        sys.stdout.write(status(rate, paused, args.mode))
+
+        mode = args.mode or prompt_mode()
+        gen = (code_tokens if mode == "code" else prose_tokens)()
+
+        sys.stdout.write(status(rate, paused, mode))
         sys.stdout.flush()
 
         next_tick = time.monotonic()
@@ -278,7 +302,7 @@ def main():
                     rate = float(PRESETS[ch])
                 else:
                     continue
-                sys.stdout.write(status(rate, paused, args.mode))
+                sys.stdout.write(status(rate, paused, mode))
                 sys.stdout.flush()
                 next_tick = time.monotonic()
 
