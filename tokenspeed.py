@@ -51,10 +51,7 @@ def prose_tokens():
     while True:
         word = LOREM[i % len(LOREM)]
         i += 1
-        first = True
-        for piece in _bpe_split_plain_word(word):
-            yield (" " + piece) if first else piece
-            first = False
+        yield from _emit_split_word(word)
         if i % PUNCT_EVERY == 0:
             yield random.choice([",", ".", ".", ";"])
 
@@ -88,8 +85,6 @@ COLORS = {
     "string":  "\x1b[32m",     # green
     "number":  "\x1b[33m",     # yellow
     "comment": "\x1b[2;37m",   # dim
-    "op":      "",
-    "id":      "",
 }
 RESET = "\x1b[0m"
 
@@ -171,8 +166,16 @@ CODE_SNIPPETS = [
 ]
 
 
-def _color(text, kind):
-    return f"{COLORS[kind]}{text}{RESET}" if COLORS[kind] else text
+def _color(text, style):
+    return f"{style}{text}{RESET}" if style else text
+
+
+def _emit_split_word(word, style=""):
+    """Yield BPE-split pieces of word; first piece prefixed with a space."""
+    first = True
+    for piece in _bpe_split_plain_word(word):
+        yield _color((" " + piece) if first else piece, style)
+        first = False
 
 
 _IDENT_PARTS = re.compile(r"_+|[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+")
@@ -221,43 +224,36 @@ def _emit_snippet(snippet):
             yield text
             continue
 
+        split_ident = False
         if kind == "word":
             if text in KEYWORDS:
-                color = "kw"
+                style = COLORS["kw"]
                 expecting_fn = text in DECL_KEYWORDS
             elif text in BUILTINS:
-                color = "builtin"
+                style = COLORS["builtin"]
                 expecting_fn = False
             elif expecting_fn:
-                color = "fn"
+                style = COLORS["fn"]
                 expecting_fn = False
+                split_ident = True
             else:
-                color = "id"
-        elif kind == "comment":
-            color = "comment"
-        elif kind == "string":
-            color = "string"
-        elif kind == "number":
-            color = "number"
+                style = ""
+                split_ident = True
+        elif kind in ("comment", "string", "number"):
+            style = COLORS[kind]
         else:
-            color = "op"
+            style = ""
 
-        if color in ("id", "fn"):
+        if split_ident:
             for piece in _split_identifier(text):
-                yield _color(piece, color)
+                yield _color(piece, style)
         else:
-            yield _color(text, color)
+            yield _color(text, style)
 
 
 def _snippet_cycle():
-    snippets = list(CODE_SNIPPETS)
-    random.shuffle(snippets)
-    idx = 0
     while True:
-        yield snippets[idx % len(snippets)]
-        idx += 1
-        if idx % len(snippets) == 0:
-            random.shuffle(snippets)
+        yield from random.sample(CODE_SNIPPETS, len(CODE_SNIPPETS))
 
 
 def code_tokens():
@@ -298,22 +294,16 @@ THOUGHTS = [
 
 def _emit_thought():
     """Yield dim-italic tokens for a 3–7 sentence thought."""
-    for s_idx in range(random.randint(3, 7)):
+    for _ in range(random.randint(3, 7)):
         sentence = random.choice(THOUGHTS)
         for word in sentence.split():
             base = word.rstrip(",.;:?!")
             tail = word[len(base):]
             if not base:
                 base, tail = word, ""
-
-            first = True
-            for piece in _bpe_split_plain_word(base):
-                prefix = " " if first else ""
-                yield f"{THINK_STYLE}{prefix}{piece}{RESET}"
-                first = False
-
+            yield from _emit_split_word(base, THINK_STYLE)
             for ch in tail:
-                yield f"{THINK_STYLE}{ch}{RESET}"
+                yield _color(ch, THINK_STYLE)
 
 
 def think_tokens():
@@ -337,6 +327,13 @@ PRESETS = {
     "1": 5, "2": 10, "3": 20, "4": 30, "5": 60,
     "6": 100, "7": 200, "8": 400, "9": 800,
 }
+
+MIN_RATE = 0.05
+MAX_RATE = 2000.0
+RATE_STEP = 1.25
+PAUSE_POLL = 0.05  # seconds between input polls while paused
+
+GENERATORS = {"code": code_tokens, "text": prose_tokens, "think": think_tokens}
 
 
 def status(rate, paused, mode):
@@ -371,13 +368,12 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("rate", type=float, nargs="?", default=30.0,
                    help="initial tokens per second (default: 30)")
-    p.add_argument("--mode", choices=["code", "text", "think"], default=None,
+    p.add_argument("--mode", choices=list(GENERATORS), default=None,
                    help="what to stream (prompts if omitted)")
     args = p.parse_args()
 
-    rate = max(0.05, args.rate)
+    rate = max(MIN_RATE, args.rate)
     paused = False
-    generators = {"code": code_tokens, "text": prose_tokens, "think": think_tokens}
 
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
@@ -385,22 +381,22 @@ def main():
         tty.setcbreak(fd)
 
         mode = args.mode or prompt_mode()
-        gen = generators[mode]()
+        gen = GENERATORS[mode]()
 
         sys.stdout.write(status(rate, paused, mode))
         sys.stdout.flush()
 
         next_tick = time.monotonic()
-        for tok in gen:
+        while True:
             while select.select([sys.stdin], [], [], 0)[0]:
                 ch = sys.stdin.read(1)
                 if ch == "q":
                     sys.stdout.write(RESET + "\n\n")
                     return
                 elif ch in ("+", "="):
-                    rate = min(rate * 1.25, 2000)
+                    rate = min(rate * RATE_STEP, MAX_RATE)
                 elif ch in ("-", "_"):
-                    rate = max(rate / 1.25, 0.05)
+                    rate = max(rate / RATE_STEP, MIN_RATE)
                 elif ch == " ":
                     paused = not paused
                 elif ch in PRESETS:
@@ -412,10 +408,10 @@ def main():
                 next_tick = time.monotonic()
 
             if paused:
-                time.sleep(0.05)
+                time.sleep(PAUSE_POLL)
                 continue
 
-            sys.stdout.write(tok)
+            sys.stdout.write(next(gen))
             sys.stdout.flush()
 
             next_tick += 1.0 / rate
