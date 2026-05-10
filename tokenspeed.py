@@ -175,53 +175,116 @@ def _split_identifier(text):
     yield text[cut:]
 
 
-def code_tokens():
+def _emit_snippet(snippet):
+    """Yield colored tokens for one code snippet."""
+    expecting_fn = False
+    for m in TOKEN_RE.finditer(snippet):
+        kind = m.lastgroup
+        text = m.group()
+
+        if kind == "ws":
+            yield text
+            continue
+
+        if kind == "word":
+            if text in KEYWORDS:
+                color = "kw"
+                expecting_fn = text in DECL_KEYWORDS
+            elif text in BUILTINS:
+                color = "builtin"
+                expecting_fn = False
+            elif expecting_fn:
+                color = "fn"
+                expecting_fn = False
+            else:
+                color = "id"
+        elif kind == "comment":
+            color = "comment"
+        elif kind == "string":
+            color = "string"
+        elif kind == "number":
+            color = "number"
+        else:
+            color = "op"
+
+        if color in ("id", "fn"):
+            for piece in _split_identifier(text):
+                yield _color(piece, color)
+        else:
+            yield _color(text, color)
+
+
+def _snippet_cycle():
     snippets = list(CODE_SNIPPETS)
     random.shuffle(snippets)
     idx = 0
     while True:
-        snippet = snippets[idx % len(snippets)]
+        yield snippets[idx % len(snippets)]
         idx += 1
         if idx % len(snippets) == 0:
             random.shuffle(snippets)
 
-        expecting_fn = False
-        for m in TOKEN_RE.finditer(snippet):
-            kind = m.lastgroup
-            text = m.group()
 
-            if kind == "ws":
-                yield text
-                continue
-
-            if kind == "word":
-                if text in KEYWORDS:
-                    color = "kw"
-                    expecting_fn = text in DECL_KEYWORDS
-                elif text in BUILTINS:
-                    color = "builtin"
-                    expecting_fn = False
-                elif expecting_fn:
-                    color = "fn"
-                    expecting_fn = False
-                else:
-                    color = "id"
-            elif kind == "comment":
-                color = "comment"
-            elif kind == "string":
-                color = "string"
-            elif kind == "number":
-                color = "number"
-            else:
-                color = "op"
-
-            if color in ("id", "fn"):
-                for piece in _split_identifier(text):
-                    yield _color(piece, color)
-            else:
-                yield _color(text, color)
-
+def code_tokens():
+    for snippet in _snippet_cycle():
+        yield from _emit_snippet(snippet)
         yield "\n"
+
+
+# ---------------------------------------------------------------------------
+# Think mode (reasoning blended with code)
+# ---------------------------------------------------------------------------
+
+THINK_STYLE = "\x1b[2;3m"  # dim italic
+
+THOUGHTS = [
+    "Let me trace through this with a small example to make sure the indices line up.",
+    "The function takes a path and returns a Result, so any IO error bubbles up via the ? operator.",
+    "Wait — if the input list is empty, the loop never executes and we return a stale value.",
+    "I think the cleanest approach is to extract this into its own helper and unit-test it in isolation.",
+    "Actually, the existing utility already handles the retry logic, so I should just reuse it.",
+    "Looking at the call sites, none of them pass None, so a non-optional type is fine here.",
+    "Let me check whether the upstream library closes the connection on its own.",
+    "First I'll validate the input, then run the main loop, then format the output for the caller.",
+    "The hot path here is the inner loop, so I want to avoid allocations inside it if possible.",
+    "I should add an early return when the cache is warm to skip the expensive recomputation.",
+    "This is essentially a fold, so a reduce with an accumulator dictionary should work cleanly.",
+    "If we're streaming, we can't materialize the whole list — switch to a generator that yields chunks.",
+    "The error handling is duplicated across all three call sites, so let me factor it into a decorator.",
+    "Hmm, the type annotation says str but the runtime value can be bytes when the encoding fails.",
+    "I'll use a context manager so the file gets closed even if an exception is raised mid-iteration.",
+    "Before writing the implementation, I want to sketch the public API to keep the surface minimal.",
+    "The naming is a bit confusing here — result and response mean different things in this codebase.",
+    "OK, I think I have a clear plan now. Let me write the function:",
+    "That handles the happy path. Now I need to think about what happens on a partial failure.",
+    "Reading the tests, the contract seems to be that empty input returns an empty list, not None.",
+]
+
+
+def _emit_thought():
+    """Yield dim-italic tokens for a 3–7 sentence thought."""
+    for s_idx in range(random.randint(3, 7)):
+        sentence = random.choice(THOUGHTS)
+        for word in sentence.split():
+            if len(word) >= 8 and random.random() < 0.4:
+                cut = random.randint(3, len(word) - 3)
+                yield f"{THINK_STYLE} {word[:cut]}{RESET}"
+                yield f"{THINK_STYLE}{word[cut:]}{RESET}"
+            else:
+                yield f"{THINK_STYLE} {word}{RESET}"
+
+
+def think_tokens():
+    for snippet in _snippet_cycle():
+        yield from _emit_thought()
+        yield "\n\n"
+        yield from _emit_snippet(snippet)
+        if random.random() < 0.7:
+            yield "\n"
+            yield from _emit_thought()
+            yield "\n\n"
+        else:
+            yield "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -245,19 +308,18 @@ def status(rate, paused, mode):
 def prompt_mode():
     sys.stdout.write(
         "\n\x1b[1mChoose mode:\x1b[0m\n"
-        "  \x1b[1;33m[c]\x1b[0m code  — syntax-highlighted pseudo-code\n"
-        "  \x1b[1;33m[t]\x1b[0m text  — lorem ipsum prose\n"
+        "  \x1b[1;33m[c]\x1b[0m code   — syntax-highlighted pseudo-code\n"
+        "  \x1b[1;33m[t]\x1b[0m text   — lorem ipsum prose\n"
+        "  \x1b[1;33m[h]\x1b[0m think  — reasoning blended with code\n"
         "\n> "
     )
     sys.stdout.flush()
+    keys = {"c": "code", "t": "text", "h": "think"}
     while True:
         ch = sys.stdin.read(1).lower()
-        if ch == "c":
-            sys.stdout.write("code\n")
-            return "code"
-        if ch == "t":
-            sys.stdout.write("text\n")
-            return "text"
+        if ch in keys:
+            sys.stdout.write(f"{keys[ch]}\n")
+            return keys[ch]
         if ch in ("q", "\x03", "\x04"):  # q, Ctrl-C, Ctrl-D
             sys.stdout.write("\n")
             sys.exit(0)
@@ -267,12 +329,13 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("rate", type=float, nargs="?", default=30.0,
                    help="initial tokens per second (default: 30)")
-    p.add_argument("--mode", choices=["code", "text"], default=None,
+    p.add_argument("--mode", choices=["code", "text", "think"], default=None,
                    help="what to stream (prompts if omitted)")
     args = p.parse_args()
 
     rate = max(0.5, args.rate)
     paused = False
+    generators = {"code": code_tokens, "text": prose_tokens, "think": think_tokens}
 
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
@@ -280,7 +343,7 @@ def main():
         tty.setcbreak(fd)
 
         mode = args.mode or prompt_mode()
-        gen = (code_tokens if mode == "code" else prose_tokens)()
+        gen = generators[mode]()
 
         sys.stdout.write(status(rate, paused, mode))
         sys.stdout.flush()
